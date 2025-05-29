@@ -1,0 +1,91 @@
+---
+- name: Installare un server di Minecraft su macchina virtuale Debian 12
+  hosts: all
+  become: yes
+  remote_user: azureuser
+  vars:
+    mcs_dir: /opt/minecraftserver
+    mcs_jar: server.jar
+    mcs_jar_url: "https://piston-data.mojang.com/v1/objects/e6ec2f64e6080b9b5d9b471b291c33cc7f509733/server.jar"
+    java_package: openjdk-21-jdk
+    session_name: mcserver
+    mc_memory_min: 1024M
+    mc_memory_max: 2048M
+
+  tasks:
+    - name: Aggiungi sid repository alla sources.list
+      lineinfile:
+        path: /etc/apt/sources.list
+        line: "deb http://deb.debian.org/debian/ sid main"
+        state: present
+
+    - name: Pin sid repository con bassa priorità
+      copy:
+        dest: /etc/apt/preferences.d/sid.pref
+        content: |
+          Package: *
+          Pin: release a=sid
+          Pin-Priority: 100
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Installa OpenJDK, wget, screen e ufw
+      apt:
+        name:
+          - "{{ java_package }}"
+          - wget
+          - screen
+          - ufw
+        state: present
+
+    - name: Crea directory del server Minecraft
+      file:
+        path: "{{ mcs_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Scarica il file server.jar di Minecraft
+      get_url:
+        url: "{{ mcs_jar_url }}"
+        dest: "{{ mcs_dir }}/{{ mcs_jar }}"
+        mode: '0755'
+
+    - name: Accetta EULA di Minecraft
+      copy:
+        dest: "{{ mcs_dir }}/eula.txt"
+        content: "eula=true\n"
+        mode: '0644'
+
+    - name: Configura server.properties per abilitare client craccati
+      lineinfile:
+        path: "{{ mcs_dir }}/server.properties"
+        regexp: '^online-mode='
+        line: 'online-mode=false'
+        create: yes
+        mode: '0644'
+
+    - name: Verifica se la sessione screen è attiva
+      shell: screen -list | grep -w "{{ session_name }}"
+      register: screen_session
+      failed_when: false
+      changed_when: false
+
+    - name: Avvia server Minecraft se non è già in esecuzione
+      shell: >
+        screen -dmS {{ session_name }} java -Xmx{{ mc_memory_max }} -Xms{{ mc_memory_min }} -jar {{ mcs_jar }} nogui
+      args:
+        chdir: "{{ mcs_dir }}"
+      when: screen_session.stdout == ""
+
+    - name: Permetti accesso alla porta 25565 (Minecraft)
+      ufw:
+        rule: allow
+        port: '25565'
+        proto: tcp
+
+    - name: Abilita UFW
+      ufw:
+        state: enabled
