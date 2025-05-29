@@ -114,8 +114,8 @@ resource "ansible_host" "minecraft_host" {
 }
 
 resource "ansible_playbook" "playbook" {
-  playbook   = "playbook.yml"
-  name       = "minecraft_setup"
+  playbook   = "../../modules/minecraft_server/playbook.yml"
+  name       = azurerm_public_ip.pip.ip_address
   replayable = true
 
 }
